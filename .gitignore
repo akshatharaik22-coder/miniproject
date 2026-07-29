@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+
+results/
+saved_model.pth
+*.pth
+
+dataset/train/lowlight/
+dataset/train/enhanced/
+dataset/small_train/
+
+.vscode/
