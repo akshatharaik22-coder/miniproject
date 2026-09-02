@@ -10,3 +10,5 @@ dataset/train/enhanced/
 dataset/small_train/
 
 .vscode/
+dataset/test/
+dataset/validation/
