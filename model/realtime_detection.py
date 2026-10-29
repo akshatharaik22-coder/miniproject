@@ -61,7 +61,7 @@ model = get_model()
 model_path = os.path.join(
     project_root,
     "results",
-    "model_epoch_2.pth"
+    "model_epoch_5.pth"
 )
 
 print("Loading model from:", model_path)

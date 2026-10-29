@@ -8,17 +8,12 @@ from torchvision import transforms
 
 
 # ==========================================
-# Project Root
+# PROJECT PATHS
 # ==========================================
 
 PROJECT_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
-
-
-# ==========================================
-# NEXT TRAINING DATASET
-# ==========================================
 
 IMAGE_FOLDER = os.path.join(
     PROJECT_ROOT,
@@ -36,17 +31,9 @@ XML_FOLDER = os.path.join(
 
 
 # ==========================================
-# Training Range
-# ==========================================
-# First 2000 images were already used.
-# Now use images 2001 - 4000.
-
-START_INDEX = 2000
-END_INDEX = 4000
-
-
-# ==========================================
-# Classes
+# CLASSES
+# Background = 0
+# Nine object classes = 1 to 9
 # ==========================================
 
 CLASSES = {
@@ -63,7 +50,7 @@ CLASSES = {
 
 
 # ==========================================
-# Image Transform
+# IMAGE TRANSFORMATION
 # ==========================================
 
 transform = transforms.Compose([
@@ -72,41 +59,87 @@ transform = transforms.Compose([
 
 
 # ==========================================
-# Dataset Class
+# DATASET CLASS
 # ==========================================
 
 class VOCDataset(Dataset):
 
-    def __init__(self):
+    def __init__(self, start_index=0, end_index=2000):
 
+        if not os.path.isdir(IMAGE_FOLDER):
+            raise FileNotFoundError(
+                f"Image folder not found: {IMAGE_FOLDER}"
+            )
+
+        if not os.path.isdir(XML_FOLDER):
+            raise FileNotFoundError(
+                f"Annotation folder not found: {XML_FOLDER}"
+            )
+
+        if start_index < 0 or end_index <= start_index:
+            raise ValueError(
+                "Invalid dataset range. "
+                "Ensure start_index >= 0 and end_index > start_index."
+            )
+
+        # Get all images in sorted order.
         all_images = sorted([
-            f for f in os.listdir(IMAGE_FOLDER)
-            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+            filename
+            for filename in os.listdir(IMAGE_FOLDER)
+            if filename.lower().endswith(
+                (".jpg", ".jpeg", ".png")
+            )
         ])
 
-        # Take only images 2001 - 4000
-        self.images = all_images[
-            START_INDEX:END_INDEX
-        ]
+        total_images = len(all_images)
 
-        print("Total images available:", len(all_images))
+        if end_index > total_images:
+            raise ValueError(
+                f"Requested images {start_index + 1} to {end_index}, "
+                f"but only {total_images} images are available."
+            )
+
+        # Select the requested group.
+        self.images = all_images[start_index:end_index]
+
+        self.start_index = start_index
+        self.end_index = end_index
+
+        print("\n" + "=" * 50)
+        print("DATASET INITIALIZATION")
+        print("=" * 50)
+        print("Total available images:", total_images)
+        print("Selected images:", len(self.images))
         print(
-            "Images selected for this training:",
-            len(self.images)
+            "Selected image positions:",
+            f"{start_index + 1} to {end_index}"
         )
 
-        print(
-            "Training range:",
-            START_INDEX + 1,
-            "to",
-            min(END_INDEX, len(all_images))
-        )
+        # Check that every selected image has an XML file.
+        missing_xml = []
 
+        for image_name in self.images:
+
+            xml_name = os.path.splitext(image_name)[0] + ".xml"
+
+            xml_path = os.path.join(
+                XML_FOLDER,
+                xml_name
+            )
+
+            if not os.path.isfile(xml_path):
+                missing_xml.append(image_name)
+
+        if missing_xml:
+            raise FileNotFoundError(
+                f"Found {len(missing_xml)} images without matching XML files.\n"
+                f"Examples: {missing_xml[:10]}"
+            )
+
+        print("XML annotation check: PASSED")
 
     def __len__(self):
-
         return len(self.images)
-
 
     def __getitem__(self, index):
 
@@ -117,63 +150,81 @@ class VOCDataset(Dataset):
             image_name
         )
 
-        image = Image.open(
-            image_path
-        ).convert("RGB")
+        # Load image.
+        with Image.open(image_path) as image_file:
+            image = image_file.convert("RGB")
 
         image = transform(image)
 
-
-        # ======================================
-        # XML Annotation
-        # ======================================
-
-        xml_name = os.path.splitext(
-            image_name
-        )[0] + ".xml"
+        # Find corresponding XML annotation.
+        xml_name = os.path.splitext(image_name)[0] + ".xml"
 
         xml_path = os.path.join(
             XML_FOLDER,
             xml_name
         )
 
-        tree = ET.parse(xml_path)
+        try:
+            tree = ET.parse(xml_path)
+        except ET.ParseError as error:
+            raise ValueError(
+                f"Invalid XML annotation: {xml_path}"
+            ) from error
 
         root = tree.getroot()
-
 
         boxes = []
         labels = []
 
-
         for obj in root.findall("object"):
 
-            class_name = obj.find("name").text.strip()
+            name_element = obj.find("name")
+            box_element = obj.find("bndbox")
 
+            if name_element is None or box_element is None:
+                continue
+
+            if name_element.text is None:
+                continue
+
+            class_name = name_element.text.strip()
+
+            # Ignore object classes outside the nine defined classes.
             if class_name not in CLASSES:
                 continue
 
-            labels.append(
-                CLASSES[class_name]
-            )
+            coordinate_names = [
+                "xmin",
+                "ymin",
+                "xmax",
+                "ymax"
+            ]
 
+            coordinates = []
 
-            xmin = float(
-                obj.find("bndbox/xmin").text
-            )
+            for coordinate_name in coordinate_names:
 
-            ymin = float(
-                obj.find("bndbox/ymin").text
-            )
+                coordinate_element = box_element.find(
+                    coordinate_name
+                )
 
-            xmax = float(
-                obj.find("bndbox/xmax").text
-            )
+                if (
+                    coordinate_element is None
+                    or coordinate_element.text is None
+                ):
+                    raise ValueError(
+                        f"Missing {coordinate_name} in {xml_path}"
+                    )
 
-            ymax = float(
-                obj.find("bndbox/ymax").text
-            )
+                coordinates.append(
+                    float(coordinate_element.text)
+                )
 
+            xmin, ymin, xmax, ymax = coordinates
+
+            # Reject invalid or zero-area bounding boxes.
+            if xmax <= xmin or ymax <= ymin:
+                continue
 
             boxes.append([
                 xmin,
@@ -182,12 +233,22 @@ class VOCDataset(Dataset):
                 ymax
             ])
 
+            labels.append(CLASSES[class_name])
 
-        # ======================================
-        # Convert to Tensor
-        # ======================================
+        # Convert annotations to tensors.
+        if boxes:
 
-        if len(boxes) == 0:
+            boxes = torch.tensor(
+                boxes,
+                dtype=torch.float32
+            )
+
+            labels = torch.tensor(
+                labels,
+                dtype=torch.int64
+            )
+
+        else:
 
             boxes = torch.zeros(
                 (0, 4),
@@ -199,94 +260,56 @@ class VOCDataset(Dataset):
                 dtype=torch.int64
             )
 
-        else:
-
-            boxes = torch.as_tensor(
-                boxes,
-                dtype=torch.float32
-            )
-
-            labels = torch.as_tensor(
-                labels,
-                dtype=torch.int64
-            )
-
-
-        image_id = torch.tensor([
-            index
-        ])
-
+        # Image IDs use the image's position in the full sorted list.
+        image_id = torch.tensor(
+            [self.start_index + index],
+            dtype=torch.int64
+        )
 
         area = (
             (boxes[:, 3] - boxes[:, 1])
-            *
-            (boxes[:, 2] - boxes[:, 0])
+            * (boxes[:, 2] - boxes[:, 0])
         )
-
 
         iscrowd = torch.zeros(
             (len(labels),),
             dtype=torch.int64
         )
 
-
         target = {
-
             "boxes": boxes,
-
             "labels": labels,
-
             "image_id": image_id,
-
             "area": area,
-
             "iscrowd": iscrowd
         }
-
 
         return image, target
 
 
 # ==========================================
-# Test Dataset
+# DATASET TEST
 # ==========================================
 
 if __name__ == "__main__":
 
-    dataset = VOCDataset()
-
-    print("\n===================================")
-    print("Next Training Dataset")
-    print("===================================")
-
-    print(
-        "Total Selected Images:",
-        len(dataset)
+    # Test the first 2,000 images.
+    dataset = VOCDataset(
+        start_index=0,
+        end_index=2000
     )
 
+    print("\n" + "=" * 50)
+    print("DATASET TEST RESULTS")
+    print("=" * 50)
+
+    print("Selected images:", len(dataset))
 
     image, target = dataset[0]
 
+    print("First image shape:", image.shape)
+    print("First image ID:", target["image_id"].item())
+    print("Object labels:", target["labels"])
+    print("Bounding boxes:", target["boxes"])
 
-    print(
-        "\nImage Shape:",
-        image.shape
-    )
-
-
-    print(
-        "\nLabels:"
-    )
-
-    print(
-        target["labels"]
-    )
-
-
-    print(
-        "\nBounding Boxes:"
-    )
-
-    print(
-        target["boxes"]
-    )
+    print("\nDataset test completed successfully.")
