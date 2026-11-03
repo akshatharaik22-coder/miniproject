@@ -1,6 +1,6 @@
-
 import os
 import time
+import urllib.request
 
 import cv2
 import numpy as np
@@ -23,6 +23,11 @@ MODEL_PATH = os.path.join(
     PROJECT_ROOT,
     "results",
     "model_epoch_3.pth"
+)
+
+MODEL_URL = os.getenv(
+    "MODEL_URL",
+    "https://huggingface.co/akshatha-rai/vision-assist-model/resolve/main/model_epoch_3.pth"
 )
 
 NUM_CLASSES = 10
@@ -72,12 +77,33 @@ def create_model():
 
     print("Loading trained Epoch 3 checkpoint...")
 
+    # Download the model only when it is not available locally.
     if not os.path.exists(MODEL_PATH):
 
-        raise FileNotFoundError(
-            f"Model checkpoint not found: {MODEL_PATH}"
+        print("Model checkpoint not found locally.")
+        print("Downloading model from Hugging Face...")
+
+        os.makedirs(
+            os.path.dirname(MODEL_PATH),
+            exist_ok=True
         )
 
+        temporary_path = MODEL_PATH + ".download"
+
+        urllib.request.urlretrieve(
+            MODEL_URL,
+            temporary_path
+        )
+
+        os.replace(
+            temporary_path,
+            MODEL_PATH
+        )
+
+        print("Model downloaded successfully.")
+
+    # Load the checkpoint whether it was already present
+    # or downloaded from Hugging Face.
     checkpoint = torch.load(
         MODEL_PATH,
         map_location=DEVICE,
