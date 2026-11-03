@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+opencv-python-headless
+torch==2.13.0
+torchvision==0.28.0
