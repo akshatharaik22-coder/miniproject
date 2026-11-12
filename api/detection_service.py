@@ -1,6 +1,7 @@
 import os
 import time
 import urllib.request
+import gc
 
 import cv2
 import numpy as np
@@ -51,6 +52,9 @@ CLASSES = {
 }
 
 DEVICE = torch.device("cpu")
+# Reduce CPU thread and memory overhead on small hosting instances.
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 
 # =========================================================
@@ -59,29 +63,30 @@ DEVICE = torch.device("cpu")
 
 def create_model():
 
-    print("Creating Faster R-CNN architecture...")
+    print("Creating Faster R-CNN architecture using meta device...")
 
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
-        weights=None,
-        weights_backbone=None
-    )
+    # Create architecture without allocating random model weights.
+    with torch.device("meta"):
 
-    in_features = (
-        model.roi_heads.box_predictor.cls_score.in_features
-    )
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(
+            weights=None,
+            weights_backbone=None
+        )
 
-    model.roi_heads.box_predictor = FastRCNNPredictor(
-        in_features,
-        NUM_CLASSES
-    )
+        in_features = (
+            model.roi_heads.box_predictor.cls_score.in_features
+        )
 
-    print("Loading trained Epoch 3 checkpoint...")
+        model.roi_heads.box_predictor = FastRCNNPredictor(
+            in_features,
+            NUM_CLASSES
+        )
 
-    # Download the model only when it is not available locally.
+    print("Preparing model checkpoint...")
+
     if not os.path.exists(MODEL_PATH):
 
-        print("Model checkpoint not found locally.")
-        print("Downloading model from Hugging Face...")
+        print("Downloading checkpoint from Hugging Face...")
 
         os.makedirs(
             os.path.dirname(MODEL_PATH),
@@ -100,19 +105,26 @@ def create_model():
             MODEL_PATH
         )
 
-        print("Model downloaded successfully.")
+        print("Checkpoint downloaded successfully.")
 
-    # Load the checkpoint whether it was already present
-    # or downloaded from Hugging Face.
+    print("Loading checkpoint using memory-mapped loading...")
+
     checkpoint = torch.load(
         MODEL_PATH,
-        map_location=DEVICE,
-        weights_only=True
+        map_location="cpu",
+        weights_only=True,
+        mmap=True
     )
 
-    model.load_state_dict(checkpoint)
+    # Assign checkpoint tensors directly instead of copying
+    # them into separately allocated model parameters.
+    model.load_state_dict(
+        checkpoint,
+        assign=True
+    )
 
-    model.to(DEVICE)
+    del checkpoint
+    gc.collect()
 
     model.eval()
 
