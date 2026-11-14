@@ -21,13 +21,18 @@ PROJECT_ROOT = os.path.abspath(
 )
 
 MODEL_PATH = os.path.join(
-    PROJECT_ROOT, "results", "model_epoch_3.pth"
+    PROJECT_ROOT,
+    "results",
+    "retrained",
+    "model_epoch_3.pth"
 )
 
 MODEL_URL = os.getenv(
     "MODEL_URL",
-    "https://huggingface.co/akshatha-rai/vision-assist-model/resolve/main/model_epoch_3.pth"
+    "https://huggingface.co/akshatha-rai/vision-assist-model/resolve/main/model_epoch_3_retrained.pth"
 )
+
+
 
 NUM_CLASSES = 10
 CONFIDENCE_THRESHOLD = 0.50
@@ -80,8 +85,7 @@ def create_model():
 
     if not os.path.exists(MODEL_PATH):
 
-        print("Downloading checkpoint from Hugging Face...")
-
+        print("Downloading official retrained Epoch 3 checkpoint from Hugging Face...")
         os.makedirs(
             os.path.dirname(MODEL_PATH),
             exist_ok=True
@@ -140,8 +144,7 @@ def create_model():
     print("Inference image size: 400-640 pixels.")
     print("RPN proposals: 300 before NMS, 100 after NMS.")
     print("Maximum detections: 30.")
-    print("Epoch 3 model loaded successfully.")
-
+    print("Official retrained Epoch 3 model loaded successfully.")
     return model
 
 
